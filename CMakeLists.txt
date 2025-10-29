@@ -537,6 +537,39 @@ install (
     RUNTIME DESTINATION "${INSTALL_BIN_DIR}" COMPONENT bin
 )
 
+################################################################################
+# Crypto plugin (X25519 + ChaCha20-Poly1305)
+################################################################################
+file(GLOB_RECURSE ${VSOMEIP_NAME}-crypto_SRC
+    "implementation/crypto/src/*.cpp"
+)
+list(SORT ${VSOMEIP_NAME}-crypto_SRC)
+
+add_library(${VSOMEIP_NAME}-crypto SHARED ${${VSOMEIP_NAME}-crypto_SRC})
+set_target_properties (${VSOMEIP_NAME}-crypto PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
+
+find_package(OpenSSL REQUIRED)
+
+target_include_directories(${VSOMEIP_NAME}-crypto PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/interface
+)
+
+target_link_libraries(${VSOMEIP_NAME}-crypto ${VSOMEIP_NAME} OpenSSL::Crypto)
+## No custom version script for crypto to avoid toolchain incompatibilities
+
+install (
+    TARGETS ${VSOMEIP_NAME}-crypto
+    LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT shlib
+    RUNTIME DESTINATION "${INSTALL_BIN_DIR}" COMPONENT bin
+)
+
+# Also provide a static variant for benchmarking (avoids version-script on shared libs)
+add_library(${VSOMEIP_NAME}-crypto-static STATIC ${${VSOMEIP_NAME}-crypto_SRC})
+target_include_directories(${VSOMEIP_NAME}-crypto-static PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/interface
+)
+target_link_libraries(${VSOMEIP_NAME}-crypto-static OpenSSL::Crypto)
+
 if (VSOMEIP_ENABLE_COMPAT EQUAL 1)
 install (
     TARGETS ${VSOMEIP_COMPAT_NAME}
@@ -669,6 +702,7 @@ endif()
 # build tools
 add_custom_target( tools )
 add_subdirectory( tools/vsomeip_ctrl )
+add_subdirectory( tools/crypto_bench )
 
 # build examples
 add_custom_target( examples )

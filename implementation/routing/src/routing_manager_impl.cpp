@@ -60,6 +60,7 @@
 #include "../../e2e_protection/include/e2exf/config.hpp"
 
 #include "../../e2e_protection/include/e2e/profile/e2e_provider.hpp"
+#include "../../..//interface/vsomeip/plugins/crypto_provider.hpp"
 #endif
 
 #ifdef USE_DLT
@@ -185,6 +186,19 @@ void routing_manager_impl::init() {
         for (auto& identifier : its_e2e_configuration) {
             if (!e2e_provider_->add_configuration(identifier.second)) {
                 VSOMEIP_INFO << "Unknown E2E profile: " << identifier.second->profile << ", skipping ...";
+            }
+        }
+    }
+
+    // Try loading crypto plugin optionally
+    {
+        const char* its_crypto_module = getenv("VSOMEIP_CRYPTO_MODULE");
+        const std::string plugin_name = its_crypto_module != nullptr ? its_crypto_module : "libvsomeip3-crypto.so";
+        auto its_plugin = plugin_manager::get()->get_plugin(plugin_type_e::APPLICATION_PLUGIN, plugin_name);
+        if (its_plugin) {
+            crypto_provider_ = std::dynamic_pointer_cast<crypto_plugin::crypto_provider>(its_plugin);
+            if (crypto_provider_) {
+                VSOMEIP_INFO << "Crypto module loaded.";
             }
         }
     }
@@ -850,6 +864,21 @@ bool routing_manager_impl::send(client_t _client, const byte_t* _data, length_t 
 #endif
                     }
                 }
+                if (crypto_provider_) {
+                    // Apply encryption on outgoing requests/notifications to remote peers
+                    service_t svc = its_service;
+                    method_t mth = its_method;
+                    std::vector<std::uint8_t> buf(_data, _data + _size);
+                    if (!is_service_discovery) {
+                        if (crypto_provider_->encrypt(svc, mth, _instance, buf, VSOMEIP_PAYLOAD_POS)) {
+                            _data = buf.data();
+                            _size = static_cast<uint32_t>(buf.size());
+                            // Update SOME/IP length field
+                            *(reinterpret_cast<length_t*>(&((buf)[VSOMEIP_LENGTH_POS_MIN]))) = htonl(_size);
+                        }
+                    }
+                }
+
                 if (is_request) {
                     its_target = ep_mgr_impl_->find_or_create_remote_client(its_service, _instance, _reliable);
                     if (its_target) {
@@ -1368,6 +1397,16 @@ void routing_manager_impl::on_message(const byte_t* _data, length_t _size, endpo
                                         << its_instance << "/" << its_method;
                         return;
                     }
+                }
+            }
+            if (crypto_provider_) {
+                // Attempt decryption before E2E check
+                std::vector<std::uint8_t> buf(_data, _data + _size);
+                service_t its_service = bithelper::read_uint16_be(&_data[VSOMEIP_SERVICE_POS_MIN]);
+                method_t its_method = bithelper::read_uint16_be(&_data[VSOMEIP_METHOD_POS_MIN]);
+                if (crypto_provider_->decrypt(its_service, its_method, its_instance, buf, VSOMEIP_PAYLOAD_POS)) {
+                    _data = buf.data();
+                    _size = static_cast<length_t>(buf.size());
                 }
             }
             if (e2e_provider_) {

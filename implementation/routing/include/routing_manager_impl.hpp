@@ -46,6 +46,10 @@ namespace e2e {
 class e2e_provider;
 } // namespace e2e
 
+namespace crypto_plugin {
+class crypto_provider;
+}
+
 class routing_manager_impl : public routing_manager_base, public routing_manager_stub_host, public sd::service_discovery_host {
 public:
     routing_manager_impl(routing_manager_host* _host);
@@ -365,6 +369,7 @@ private:
     std::map<std::tuple<service_t, instance_t, eventgroup_t, client_t>, subscription_state_e> remote_subscription_state_;
 
     std::shared_ptr<e2e::e2e_provider> e2e_provider_;
+    std::shared_ptr<crypto_plugin::crypto_provider> crypto_provider_;
 
     std::mutex status_log_timer_mutex_;
     boost::asio::steady_timer status_log_timer_;
